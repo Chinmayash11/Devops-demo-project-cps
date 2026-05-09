@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: production-app-dev
+
+bases:
+- ../../base
+
+namePrefix: dev-
+
+commonLabels:
+  environment: dev
+
+# Override replicas for dev (fewer pods)
+replicas:
+- name: production-app
+  count: 1
+
+# Patch resources for dev environment
+patchesStrategicMerge:
+- deployment-patch.yaml
+
+# Resource limits for dev (lower than prod)
+resources:
+- ../../base
+
+# ConfigMap patches
+configMapGenerator:
+- name: app-config
+  behavior: merge
+  literals:
+  - ENVIRONMENT=dev
+  - LOG_LEVEL=DEBUG
+  - ENABLE_PROFILING=true

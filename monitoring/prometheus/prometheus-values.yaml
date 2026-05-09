@@ -1,0 +1,134 @@
+# Prometheus Helm Values
+# Install with: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# helm install prometheus prometheus-community/kube-prometheus-stack -f prometheus-values.yaml
+
+prometheus:
+  prometheusSpec:
+    # Retention
+    retention: 30d
+    retentionSize: "10GB"
+    
+    # Storage
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+    
+    # Resource requests and limits
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+    
+    # Service monitoring
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    
+    # Pod monitoring
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    
+    # Rule selectors
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+    
+    # Ingress configuration
+    routePrefix: /
+    
+    # External labels
+    externalLabels:
+      cluster: "production-eks"
+      environment: "production"
+    
+    # Remote write (optional, for long-term storage)
+    # remoteWrite:
+    # - url: https://your-remote-storage.example.com/write
+
+grafana:
+  enabled: true
+  adminPassword: "ChangeMeToSecurePassword"
+  persistence:
+    enabled: true
+    storageClassName: gp2
+    size: 10Gi
+  
+  # Datasources
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-operated:9090
+        access: proxy
+        isDefault: true
+  
+  # Dashboards
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+  
+  dashboards:
+    default:
+      prometheus-stats:
+        url: https://raw.githubusercontent.com/prometheus-community/grafana-dashboards/main/prometheus/prometheus-stats.json
+      kubernetes-cluster:
+        url: https://raw.githubusercontent.com/prometheus-community/grafana-dashboards/main/kubernetes/kubernetes-cluster-monitoring.json
+
+alertmanager:
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 12h
+      receiver: 'null'
+    receivers:
+    - name: 'null'
+    # Add webhook or email receivers here
+    # - name: 'slack'
+    #   slack_configs:
+    #   - api_url: YOUR_SLACK_WEBHOOK_URL
+    #     channel: '#alerts'
+
+nodeExporter:
+  enabled: true
+
+kubeStateMetrics:
+  enabled: true
+
+prometheus-node-exporter:
+  hostNetwork: true
+  hostPID: true
+  hostRootFsMount:
+    enabled: true
+
+kubeControllerManager:
+  enabled: true
+
+kubeEtcd:
+  enabled: true
+
+kubeScheduler:
+  enabled: true
+
+kubeProxy:
+  enabled: true

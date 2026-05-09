@@ -1,0 +1,158 @@
+name: Deploy to EKS
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'app/**'
+      - 'kubernetes/**'
+      - 'Dockerfile'
+      - '.github/workflows/k8s-deploy.yaml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: 'latest'
+
+env:
+  AWS_REGION: us-east-1
+  KUSTOMIZE_VERSION: 5.0.0
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Determine target environment
+      id: env
+      run: |
+        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "environment=prod" >> $GITHUB_OUTPUT
+        else
+          echo "environment=dev" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+    
+    - name: Setup kustomize
+      uses: imranismail/setup-kustomize@v2
+      with:
+        kustomize-version: ${{ env.KUSTOMIZE_VERSION }}
+    
+    - name: Update kubeconfig
+      run: |
+        CLUSTER_NAME="devops-app-${{ steps.env.outputs.environment }}-eks"
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ secrets.CLUSTER_NAME }}
+    
+    - name: Get ECR image URL
+      id: image
+      run: |
+        IMAGE_TAG="${{ github.event.inputs.image_tag || github.sha }}"
+        echo "image=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/devops-app:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+    
+    - name: Build Kubernetes manifests with Kustomize
+      run: |
+        cd kubernetes/overlays/${{ steps.env.outputs.environment }}
+        kustomize edit set image production-app-image=${{ steps.image.outputs.image }}
+        kustomize build . > manifests.yaml
+        cat manifests.yaml
+    
+    - name: Validate Kubernetes manifests
+      run: |
+        cd kubernetes/overlays/${{ steps.env.outputs.environment }}
+        kubeval manifests.yaml
+    
+    - name: Deploy to EKS
+      run: |
+        cd kubernetes/overlays/${{ steps.env.outputs.environment }}
+        kubectl apply -f manifests.yaml
+        
+        # Wait for rollout
+        kubectl rollout status deployment/production-app \
+          -n production-app-${{ steps.env.outputs.environment }} \
+          --timeout=5m
+    
+    - name: Verify deployment
+      run: |
+        echo "## Deployment Status" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        kubectl get pods -n production-app-${{ steps.env.outputs.environment }} >> $GITHUB_STEP_SUMMARY
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Service Info" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        kubectl get svc -n production-app-${{ steps.env.outputs.environment }} >> $GITHUB_STEP_SUMMARY
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Ingress Info" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        kubectl get ingress -n production-app-${{ steps.env.outputs.environment }} >> $GITHUB_STEP_SUMMARY
+    
+    - name: Check pod health
+      run: |
+        NAMESPACE="production-app-${{ steps.env.outputs.environment }}"
+        
+        # Wait for pods to be ready
+        kubectl wait --for=condition=ready pod \
+          -l app=production-app \
+          -n $NAMESPACE \
+          --timeout=300s
+        
+        # Get pod logs
+        kubectl logs -n $NAMESPACE \
+          -l app=production-app \
+          --tail=50 \
+          || true
+    
+    - name: Run smoke tests
+      run: |
+        NAMESPACE="production-app-${{ steps.env.outputs.environment }}"
+        SERVICE_NAME="production-app"
+        
+        # Port forward to test
+        kubectl port-forward \
+          -n $NAMESPACE \
+          svc/$SERVICE_NAME 5000:80 &
+        
+        sleep 3
+        
+        # Test health endpoint
+        curl -f http://localhost:5000/health || exit 1
+        curl -f http://localhost:5000/health/ready || exit 1
+    
+    - name: Send deployment notification
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: 'Deployment to ${{ steps.env.outputs.environment }} completed'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}

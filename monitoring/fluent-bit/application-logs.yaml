@@ -1,0 +1,44 @@
+# Configuration for Fluent Bit container log collection
+# Collects application logs and sends to CloudWatch Logs
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: amazon-cloudwatch
+data:
+  application.conf: |
+    [INPUT]
+        Name                tail
+        Path                /var/log/containers/*production-app*.log
+        Parser              docker
+        Tag                 app.*
+        Refresh_Interval    5
+        Mem_Buf_Limit       50MB
+        Skip_Long_Lines     On
+
+    [FILTER]
+        Name                kubernetes
+        Match               app.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     app.var.log.containers.
+        Merge_Log           On
+        Keep_Log            Off
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude On
+
+    [FILTER]
+        Name                modify
+        Match               app.*
+        Add                 cluster_name production-eks
+        Add                 environment production
+
+    [OUTPUT]
+        Name                cloudwatch_logs
+        Match               app.*
+        region              ${AWS_REGION}
+        log_group_name      /aws/eks/production-app
+        log_stream_prefix   from-fluent-bit
+        auto_create_group   true

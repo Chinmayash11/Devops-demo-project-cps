@@ -107,15 +107,7 @@ jobs:
         exit 1
     
     - name: Terraform Security Scan (TFSec)
-      uses: aquasecurity/tfsec-action@v1
+      uses: aquasecurity/tfsec-action@master
       with:
         working_directory: terraform
-        format: sarif
-        out_dir: .
       continue-on-error: true
-    
-    - name: Upload TFSec results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: terraform.sarif

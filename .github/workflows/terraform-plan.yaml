@@ -99,16 +99,7 @@ jobs:
         uses: aquasecurity/tfsec-action@master
         with:
           working_directory: terraform
-          format: sarif
-          sarif_file: terraform.sarif
         continue-on-error: true
-
-      # Upload SARIF Report
-      - name: Upload TFSec SARIF Report
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: terraform.sarif
 
       # Workflow Summary
       - name: Terraform Summary

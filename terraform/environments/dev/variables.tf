@@ -178,7 +178,7 @@ variable "additional_tags" {
   description = "Additional tags to apply to all resources"
   type        = map(string)
   default = {
-    Terraform = "true"
+    Terraform  = "true"
     CostCenter = "Engineering"
   }
 }

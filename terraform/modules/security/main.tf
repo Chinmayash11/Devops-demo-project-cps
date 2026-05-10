@@ -145,28 +145,6 @@ output "ecr_repository_url" {
 output "ecr_repository_name" {
   description = "ECR repository name"
   value       = aws_ecr_repository.app.name
-          tagPrefixList = ["v"]
-          countType     = "imageCountMoreThan"
-          countNumber   = 10
-        }
-        action = {
-          type = "expire"
-        }
-      },
-      {
-        rulePriority = 2
-        description  = "Keep last 5 untagged images"
-        selection = {
-          tagStatus   = "untagged"
-          countType   = "imageCountMoreThan"
-          countNumber = 5
-        }
-        action = {
-          type = "expire"
-        }
-      }
-    ]
-  })
 }
 
 # ============================================================================

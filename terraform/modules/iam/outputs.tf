@@ -2,37 +2,37 @@
 
 output "eks_cluster_role_arn" {
   description = "ARN of the EKS cluster IAM role"
-  value       = aws_iam_role.eks_cluster_role.arn
+  value       = try(aws_iam_role.eks_cluster_role[0].arn, "")
 }
 
 output "eks_cluster_role_name" {
   description = "Name of the EKS cluster IAM role"
-  value       = aws_iam_role.eks_cluster_role.name
+  value       = try(aws_iam_role.eks_cluster_role[0].name, "")
 }
 
 output "eks_node_group_role_arn" {
   description = "ARN of the EKS node group IAM role"
-  value       = aws_iam_role.eks_node_group_role.arn
+  value       = try(aws_iam_role.eks_node_group_role[0].arn, "")
 }
 
 output "eks_node_group_role_name" {
   description = "Name of the EKS node group IAM role"
-  value       = aws_iam_role.eks_node_group_role.name
+  value       = try(aws_iam_role.eks_node_group_role[0].name, "")
 }
 
 output "eks_node_instance_profile_arn" {
   description = "ARN of the EKS node instance profile"
-  value       = aws_iam_instance_profile.eks_node_group.arn
+  value       = try(aws_iam_instance_profile.eks_node_group[0].arn, "")
 }
 
 output "eks_node_instance_profile_name" {
   description = "Name of the EKS node instance profile"
-  value       = aws_iam_instance_profile.eks_node_group.name
+  value       = try(aws_iam_instance_profile.eks_node_group[0].name, "")
 }
 
 output "oidc_provider_arn" {
   description = "ARN of the OIDC provider"
-  value       = try(aws_iam_openid_connect_provider.eks[0].arn, "")
+  value       = var.create_oidc_provider ? aws_iam_openid_connect_provider.eks[0].arn : var.oidc_provider_arn
 }
 
 output "aws_load_balancer_controller_role_arn" {

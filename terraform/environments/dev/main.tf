@@ -77,6 +77,8 @@ module "iam" {
   cluster_name          = var.cluster_name
   eks_oidc_provider_url = "" # Will be updated after EKS cluster creation
   eks_oidc_thumbprint   = "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
+  create_base_iam_roles = true
+  enable_irsa           = false
 
   common_tags = local.common_tags
 }
@@ -155,7 +157,10 @@ module "iam_irsa" {
   project_name          = var.project_name
   cluster_name          = var.cluster_name
   eks_oidc_provider_url = module.eks.cluster_oidc_issuer_url
+  oidc_provider_arn     = module.eks.oidc_provider_arn
   eks_oidc_thumbprint   = "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
+  create_base_iam_roles = false
+  enable_irsa           = true
 
   common_tags = local.common_tags
 

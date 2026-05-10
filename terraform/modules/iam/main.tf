@@ -15,11 +15,34 @@ terraform {
 }
 
 # ============================================================================
+# Local Values
+# ============================================================================
+
+locals {
+  iam_name_prefix_max_length = 38
+
+  iam_name_prefixes = {
+    eks_cluster         = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-eks-cl-"))}-eks-cl-"
+    eks_node_group      = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-eks-ng-"))}-eks-ng-"
+    eks_node_cloudwatch = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-cw-"))}-cw-"
+    eks_node_profile    = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-eks-node-"))}-eks-node-"
+    alb_controller      = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-alb-"))}-alb-"
+    cluster_autoscaler  = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-ca-"))}-ca-"
+    ebs_csi_driver      = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-ebs-csi-"))}-ebs-csi-"
+  }
+
+  irsa_count        = var.enable_irsa ? 1 : 0
+  oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.eks[0].arn : var.oidc_provider_arn
+  oidc_provider_url = replace(var.eks_oidc_provider_url, "https://", "")
+}
+
+# ============================================================================
 # EKS Cluster IAM Role
 # ============================================================================
 
 resource "aws_iam_role" "eks_cluster_role" {
-  name_prefix = "${var.project_name}-eks-cluster-"
+  count       = var.create_base_iam_roles ? 1 : 0
+  name_prefix = local.iam_name_prefixes.eks_cluster
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -42,13 +65,15 @@ resource "aws_iam_role" "eks_cluster_role" {
 # ============================================================================
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  count      = var.create_base_iam_roles ? 1 : 0
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_cluster_role.name
+  role       = aws_iam_role.eks_cluster_role[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "eks_vpc_resource_controller" {
+  count      = var.create_base_iam_roles ? 1 : 0
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-  role       = aws_iam_role.eks_cluster_role.name
+  role       = aws_iam_role.eks_cluster_role[0].name
 }
 
 # ============================================================================
@@ -56,7 +81,8 @@ resource "aws_iam_role_policy_attachment" "eks_vpc_resource_controller" {
 # ============================================================================
 
 resource "aws_iam_role" "eks_node_group_role" {
-  name_prefix = "${var.project_name}-eks-node-group-"
+  count       = var.create_base_iam_roles ? 1 : 0
+  name_prefix = local.iam_name_prefixes.eks_node_group
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -79,23 +105,27 @@ resource "aws_iam_role" "eks_node_group_role" {
 # ============================================================================
 
 resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
+  count      = var.create_base_iam_roles ? 1 : 0
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.eks_node_group_role.name
+  role       = aws_iam_role.eks_node_group_role[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
+  count      = var.create_base_iam_roles ? 1 : 0
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.eks_node_group_role.name
+  role       = aws_iam_role.eks_node_group_role[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "eks_container_registry_policy" {
+  count      = var.create_base_iam_roles ? 1 : 0
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.eks_node_group_role.name
+  role       = aws_iam_role.eks_node_group_role[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "eks_ssm_managed_instance_core" {
+  count      = var.create_base_iam_roles ? 1 : 0
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-  role       = aws_iam_role.eks_node_group_role.name
+  role       = aws_iam_role.eks_node_group_role[0].name
 }
 
 # ============================================================================
@@ -103,8 +133,9 @@ resource "aws_iam_role_policy_attachment" "eks_ssm_managed_instance_core" {
 # ============================================================================
 
 resource "aws_iam_role_policy" "eks_node_cloudwatch_policy" {
-  name_prefix = "${var.project_name}-eks-node-cloudwatch-"
-  role        = aws_iam_role.eks_node_group_role.id
+  count       = var.create_base_iam_roles ? 1 : 0
+  name_prefix = local.iam_name_prefixes.eks_node_cloudwatch
+  role        = aws_iam_role.eks_node_group_role[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -131,8 +162,9 @@ resource "aws_iam_role_policy" "eks_node_cloudwatch_policy" {
 # ============================================================================
 
 resource "aws_iam_instance_profile" "eks_node_group" {
-  name_prefix = "${var.project_name}-eks-node-"
-  role        = aws_iam_role.eks_node_group_role.name
+  count       = var.create_base_iam_roles ? 1 : 0
+  name_prefix = local.iam_name_prefixes.eks_node_profile
+  role        = aws_iam_role.eks_node_group_role[0].name
 }
 
 # ============================================================================
@@ -140,6 +172,7 @@ resource "aws_iam_instance_profile" "eks_node_group" {
 # ============================================================================
 
 resource "aws_iam_openid_connect_provider" "eks" {
+  count           = var.create_oidc_provider ? 1 : 0
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [var.eks_oidc_thumbprint]
   url             = var.eks_oidc_provider_url
@@ -152,7 +185,8 @@ resource "aws_iam_openid_connect_provider" "eks" {
 # ============================================================================
 
 resource "aws_iam_role" "aws_load_balancer_controller" {
-  name_prefix = "${var.project_name}-aws-load-balancer-controller-"
+  count       = local.irsa_count
+  name_prefix = local.iam_name_prefixes.alb_controller
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -161,11 +195,11 @@ resource "aws_iam_role" "aws_load_balancer_controller" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.eks.arn
+          Federated = local.oidc_provider_arn
         }
         Condition = {
           StringEquals = {
-            "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+            "${local.oidc_provider_url}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
           }
         }
       }
@@ -176,8 +210,9 @@ resource "aws_iam_role" "aws_load_balancer_controller" {
 }
 
 resource "aws_iam_role_policy" "aws_load_balancer_controller" {
-  name_prefix = "${var.project_name}-aws-load-balancer-controller-"
-  role        = aws_iam_role.aws_load_balancer_controller.id
+  count       = local.irsa_count
+  name_prefix = local.iam_name_prefixes.alb_controller
+  role        = aws_iam_role.aws_load_balancer_controller[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -218,10 +253,7 @@ resource "aws_iam_role_policy" "aws_load_balancer_controller" {
           "ec2:DescribeInstances",
           "ec2:DescribeNetworkInterfaces",
           "ec2:DescribeInstanceAttribute",
-          "ec2:ModifyInstanceAttribute",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeNetworkInterfaceAttribute",
-          "ec2:ModifyNetworkInterfaceAttribute"
+          "ec2:ModifyInstanceAttribute"
         ]
         Resource = "*"
       }
@@ -234,7 +266,8 @@ resource "aws_iam_role_policy" "aws_load_balancer_controller" {
 # ============================================================================
 
 resource "aws_iam_role" "cluster_autoscaler" {
-  name_prefix = "${var.project_name}-cluster-autoscaler-"
+  count       = local.irsa_count
+  name_prefix = local.iam_name_prefixes.cluster_autoscaler
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -243,11 +276,11 @@ resource "aws_iam_role" "cluster_autoscaler" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.eks.arn
+          Federated = local.oidc_provider_arn
         }
         Condition = {
           StringEquals = {
-            "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:cluster-autoscaler"
+            "${local.oidc_provider_url}:sub" = "system:serviceaccount:kube-system:cluster-autoscaler"
           }
         }
       }
@@ -258,8 +291,9 @@ resource "aws_iam_role" "cluster_autoscaler" {
 }
 
 resource "aws_iam_role_policy" "cluster_autoscaler" {
-  name_prefix = "${var.project_name}-cluster-autoscaler-"
-  role        = aws_iam_role.cluster_autoscaler.id
+  count       = local.irsa_count
+  name_prefix = local.iam_name_prefixes.cluster_autoscaler
+  role        = aws_iam_role.cluster_autoscaler[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -298,7 +332,8 @@ resource "aws_iam_role_policy" "cluster_autoscaler" {
 # ============================================================================
 
 resource "aws_iam_role" "ebs_csi_driver" {
-  name_prefix = "${var.project_name}-ebs-csi-driver-"
+  count       = local.irsa_count
+  name_prefix = local.iam_name_prefixes.ebs_csi_driver
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -307,11 +342,11 @@ resource "aws_iam_role" "ebs_csi_driver" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.eks.arn
+          Federated = local.oidc_provider_arn
         }
         Condition = {
           StringEquals = {
-            "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+            "${local.oidc_provider_url}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
           }
         }
       }
@@ -322,6 +357,10 @@ resource "aws_iam_role" "ebs_csi_driver" {
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi_driver" {
+  count      = local.irsa_count
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-  role       = aws_iam_role.ebs_csi_driver.name
+  role       = aws_iam_role.ebs_csi_driver[0].name
 }
+
+
+

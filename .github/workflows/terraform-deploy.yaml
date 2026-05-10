@@ -1,0 +1,143 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - prod
+      confirm_apply:
+        description: Type apply-dev or apply-prod to confirm deployment
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.9.8
+  TARGET_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'prod' }}
+
+jobs:
+  terraform-deploy:
+    name: Deploy Terraform (${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'prod' }})
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'prod' }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    concurrency:
+      group: terraform-deploy-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'prod' }}
+      cancel-in-progress: false
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate manual confirmation
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          expected="apply-${{ env.TARGET_ENVIRONMENT }}"
+          actual="${{ github.event.inputs.confirm_apply }}"
+
+          if [ "$actual" != "$expected" ]; then
+            echo "Deployment cancelled: confirmation must be '$expected'."
+            exit 1
+          fi
+
+          echo "Deployment confirmed for ${{ env.TARGET_ENVIRONMENT }}."
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Clean Terraform cache
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          rm -rf .terraform .terraform.lock.hcl
+          rm -rf ~/.terraform.d/plugins ~/.terraform.d/registry ~/.terraform.d/plugin-cache
+
+      - name: Terraform format check
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          terraform fmt -check -recursive ../../
+
+      - name: Terraform init
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          terraform init -upgrade
+
+      - name: Terraform validate
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          terraform validate
+
+      - name: Terraform plan
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          terraform plan -no-color -lock-timeout=5m -out=tfplan | tee plan.txt
+          terraform show -no-color tfplan > plan-full.txt
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-deploy-plan-${{ env.TARGET_ENVIRONMENT }}
+          path: |
+            terraform/environments/${{ env.TARGET_ENVIRONMENT }}/plan.txt
+            terraform/environments/${{ env.TARGET_ENVIRONMENT }}/plan-full.txt
+
+      - name: Add deployment summary
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          echo "## Terraform Deploy - ${{ env.TARGET_ENVIRONMENT }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat plan.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform apply
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          terraform apply -no-color -auto-approve tfplan
+
+      - name: Terraform outputs
+        run: |
+          cd terraform/environments/${{ env.TARGET_ENVIRONMENT }}
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Terraform Outputs" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          terraform output -json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload local Terraform state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state-${{ env.TARGET_ENVIRONMENT }}
+          path: |
+            terraform/environments/${{ env.TARGET_ENVIRONMENT }}/terraform.tfstate
+            terraform/environments/${{ env.TARGET_ENVIRONMENT }}/terraform.tfstate.backup
+          if-no-files-found: ignore

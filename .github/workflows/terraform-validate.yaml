@@ -1,19 +1,7 @@
 name: Terraform Validate and Plan
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/terraform-*.yaml'
-  pull_request:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'terraform/**'
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
@@ -74,8 +62,7 @@ jobs:
         cd terraform/environments/${{ matrix.environment }}
         terraform validate
     
-    - name: Terraform Plan (for PR)
-      if: github.event_name == 'pull_request'
+    - name: Terraform Plan
       id: plan
       run: |
         cd terraform/environments/${{ matrix.environment }}

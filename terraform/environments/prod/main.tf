@@ -15,8 +15,7 @@ terraform {
     }
   }
 
-  # Backend configuration will be managed via -backend-config CLI flags or separate backend config file
-  # backend "s3" {}
+  # Local state is used by default. Do not configure a remote backend here.
 }
 
 provider "aws" {

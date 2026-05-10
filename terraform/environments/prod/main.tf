@@ -51,7 +51,7 @@ locals {
 # ============================================================================
 
 module "vpc" {
-  source = "../modules/vpc"
+  source = "../../modules/vpc"
 
   aws_region          = var.aws_region
   project_name        = var.project_name
@@ -71,7 +71,7 @@ module "vpc" {
 # ============================================================================
 
 module "iam" {
-  source = "../modules/iam"
+  source = "../../modules/iam"
 
   project_name             = var.project_name
   cluster_name             = var.cluster_name
@@ -86,7 +86,7 @@ module "iam" {
 # ============================================================================
 
 module "eks" {
-  source = "../modules/eks"
+  source = "../../modules/eks"
 
   cluster_name             = var.cluster_name
   kubernetes_version       = var.kubernetes_version
@@ -123,7 +123,7 @@ module "eks" {
 # ============================================================================
 
 module "security" {
-  source = "../modules/security"
+  source = "../../modules/security"
 
   project_name         = var.project_name
   cluster_name         = var.cluster_name
@@ -150,7 +150,7 @@ module "security" {
 # ============================================================================
 
 module "iam_irsa" {
-  source = "../modules/iam"
+  source = "../../modules/iam"
 
   project_name             = var.project_name
   cluster_name             = var.cluster_name

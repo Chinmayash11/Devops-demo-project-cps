@@ -24,7 +24,7 @@ output "public_subnets" {
   description = "Public subnets map with availability zones"
   value = {
     for i, subnet in aws_subnet.public : var.availability_zones[i] => {
-      subnet_id = subnet.id
+      subnet_id  = subnet.id
       cidr_block = subnet.cidr_block
     }
   }
@@ -34,7 +34,7 @@ output "private_subnets" {
   description = "Private subnets map with availability zones"
   value = {
     for i, subnet in aws_subnet.private : var.availability_zones[i] => {
-      subnet_id = subnet.id
+      subnet_id  = subnet.id
       cidr_block = subnet.cidr_block
     }
   }

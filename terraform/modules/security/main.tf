@@ -124,30 +124,6 @@ resource "aws_ecr_lifecycle_policy" "app" {
 }
 
 # ============================================================================
-# Outputs
-# ============================================================================
-
-output "kms_key_eks_id" {
-  description = "KMS key ID for EKS encryption"
-  value       = aws_kms_key.eks.id
-}
-
-output "kms_key_ecr_id" {
-  description = "KMS key ID for ECR encryption"
-  value       = aws_kms_key.ecr.id
-}
-
-output "ecr_repository_url" {
-  description = "ECR repository URL"
-  value       = aws_ecr_repository.app.repository_url
-}
-
-output "ecr_repository_name" {
-  description = "ECR repository name"
-  value       = aws_ecr_repository.app.name
-}
-
-# ============================================================================
 # Secrets Manager Secret for Database Credentials
 # ============================================================================
 
@@ -344,11 +320,11 @@ resource "aws_s3_bucket_public_access_block" "cloudtrail" {
 }
 
 resource "aws_cloudtrail" "main" {
-  name           = "${var.project_name}-cloudtrail"
-  s3_bucket_name = aws_s3_bucket.cloudtrail.id
-  is_multi_region_trail = true
+  name                       = "${var.project_name}-cloudtrail"
+  s3_bucket_name             = aws_s3_bucket.cloudtrail.id
+  is_multi_region_trail      = true
   enable_log_file_validation = true
-  kms_key_id = aws_kms_key.eks.arn
+  kms_key_id                 = aws_kms_key.eks.arn
   depends_on = [
     aws_s3_bucket_policy.cloudtrail
   ]

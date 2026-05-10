@@ -157,7 +157,7 @@ variable "db_name" {
 variable "allowed_ingress_cidrs" {
   description = "CIDR blocks allowed for ingress (restricted for production)"
   type        = list(string)
-  default     = ["10.1.0.0/16"]  # Only from within VPC
+  default     = ["10.1.0.0/16"] # Only from within VPC
 }
 
 # ============================================================================
@@ -167,7 +167,7 @@ variable "allowed_ingress_cidrs" {
 variable "log_retention_days" {
   description = "CloudWatch logs retention days"
   type        = number
-  default     = 365  # 1 year for compliance
+  default     = 365 # 1 year for compliance
 }
 
 # ============================================================================

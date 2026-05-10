@@ -4,16 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to destroy (dev or prod)'
+        description: Environment to destroy
         required: true
-        default: 'dev'
+        default: dev
         type: choice
         options:
           - dev
           - prod
       confirm_destroy:
-        description: 'Type "destroy-{environment}" to confirm destruction'
+        description: Type destroy-dev or destroy-prod to confirm destruction
         required: true
+        type: string
+      state_artifact_run_id:
+        description: Optional deploy workflow run ID containing terraform-state-{environment}
+        required: false
         type: string
 
 env:
@@ -21,128 +25,123 @@ env:
   TF_VERSION: 1.9.8
 
 jobs:
-  confirm-destroy:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Validate Confirmation
-      run: |
-        EXPECTED="destroy-${{ github.event.inputs.environment }}"
-        ACTUAL="${{ github.event.inputs.confirm_destroy }}"
-        
-        if [ "$ACTUAL" != "$EXPECTED" ]; then
-          echo "❌ Destruction cancelled: Incorrect confirmation string"
-          echo "Expected: $EXPECTED"
-          echo "Got: $ACTUAL"
-          exit 1
-        fi
-        
-        echo "✅ Destruction confirmed for ${{ github.event.inputs.environment }} environment"
-
   terraform-destroy:
-    needs: confirm-destroy
+    name: Destroy Terraform (${{ github.event.inputs.environment }})
     runs-on: ubuntu-latest
-    
+    environment:
+      name: ${{ github.event.inputs.environment }}
+
     permissions:
+      actions: read
       contents: read
       id-token: write
-    
+
+    concurrency:
+      group: terraform-destroy-${{ github.event.inputs.environment }}
+      cancel-in-progress: false
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-        aws-region: ${{ env.AWS_REGION }}
-    
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TF_VERSION }}
-        terraform_wrapper: false
+      - name: Validate confirmation
+        run: |
+          expected="destroy-${{ github.event.inputs.environment }}"
+          actual="${{ github.event.inputs.confirm_destroy }}"
 
-    - name: Cleanup Terraform Cache
-      run: |
-        cd terraform/environments/${{ github.event.inputs.environment }}
-        rm -rf .terraform .terraform.lock.hcl
-        rm -rf ~/.terraform.d/plugins ~/.terraform.d/registry ~/.terraform.d/plugin-cache
+          if [ "$actual" != "$expected" ]; then
+            echo "Destroy cancelled: confirmation must be '$expected'."
+            exit 1
+          fi
 
-    - name: Terraform Init
-      id: init
-      run: |
-        cd terraform/environments/${{ github.event.inputs.environment }}
-        terraform init -backend=false -upgrade
-    - name: Terraform Destroy Plan
-      id: destroy_plan
-      run: |
-        cd terraform/environments/${{ github.event.inputs.environment }}
-        terraform plan -destroy -no-color -out=destroy_plan > destroy_plan.txt 2>&1
-        cat destroy_plan.txt
-    
-    - name: Display Destruction Plan
-      run: |
-        cd terraform/environments/${{ github.event.inputs.environment }}
-        cat destroy_plan.txt
-    
-    - name: Create Workflow Summary
-      run: |
-        echo "## 🗑️ Terraform Destruction Plan - ${{ github.event.inputs.environment }} Environment" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "⚠️ **Warning**: This will destroy all resources in the **${{ github.event.inputs.environment }}** environment" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        cd terraform/environments/${{ github.event.inputs.environment }}
-        echo '```' >> $GITHUB_STEP_SUMMARY
-        cat destroy_plan.txt >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
-    
-    - name: Request Approval (Manual)
-      run: |
-        echo "⏸️ Pipeline paused for manual approval"
-        echo "Review the destruction plan above and approve to proceed"
-    
-    - name: Terraform Destroy (Execute)
-      id: destroy
-      run: |
-        cd terraform/environments/${{ github.event.inputs.environment }}
-        terraform destroy -auto-approve
-      continue-on-error: true
-    
-    - name: Destruction Result
-      if: always()
-      run: |
-        if [ "${{ steps.destroy.outcome }}" == "success" ]; then
-          echo "✅ Terraform destroy completed successfully"
-          echo "## ✅ Destruction Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The **${{ github.event.inputs.environment }}** environment has been destroyed." >> $GITHUB_STEP_SUMMARY
-        else
-          echo "❌ Terraform destroy failed"
-          echo "## ❌ Destruction Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Failed to destroy the **${{ github.event.inputs.environment }}** environment." >> $GITHUB_STEP_SUMMARY
-          exit 1
-        fi
-    
-    - name: Notify Slack (Optional)
-      if: always()
-      uses: slackapi/slack-github-action@v1.24.0
-      with:
-        payload: |
-          {
-            "text": "Terraform Destroy ${{ steps.destroy.outcome == 'success' && '✅ Success' || '❌ Failed' }}",
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*Terraform Destruction Report*\nEnvironment: `${{ github.event.inputs.environment }}`\nStatus: ${{ steps.destroy.outcome == 'success' && '✅ Success' || '❌ Failed' }}"
-                }
-              }
-            ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-      continue-on-error: true
+          echo "Destroy confirmed for ${{ github.event.inputs.environment }}."
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Restore local Terraform state artifact
+        if: github.event.inputs.state_artifact_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          target_dir="terraform/environments/${{ github.event.inputs.environment }}"
+          artifact_name="terraform-state-${{ github.event.inputs.environment }}"
+
+          gh run download "${{ github.event.inputs.state_artifact_run_id }}" \
+            --name "$artifact_name" \
+            --dir "$target_dir"
+
+          ls -la "$target_dir"
+
+      - name: Warn when no local state was restored
+        if: github.event.inputs.state_artifact_run_id == ''
+        run: |
+          echo "No state artifact run ID was provided."
+          echo "With local state, Terraform can only destroy resources that are present in terraform.tfstate on this runner."
+          echo "Use the deploy run ID that uploaded terraform-state-${{ github.event.inputs.environment }} if you need to restore state."
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Clean Terraform cache
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          rm -rf .terraform .terraform.lock.hcl
+          rm -rf ~/.terraform.d/plugins ~/.terraform.d/registry ~/.terraform.d/plugin-cache
+
+      - name: Terraform init
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          terraform init -upgrade
+
+      - name: Terraform validate
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          terraform validate
+
+      - name: Terraform destroy plan
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          terraform plan -destroy -no-color -lock-timeout=5m -out=destroy.tfplan | tee destroy-plan.txt
+
+      - name: Upload destroy plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-destroy-plan-${{ github.event.inputs.environment }}
+          path: terraform/environments/${{ github.event.inputs.environment }}/destroy-plan.txt
+
+      - name: Add destroy summary
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          echo "## Terraform Destroy - ${{ github.event.inputs.environment }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review the destroy plan carefully. This workflow will apply it automatically after this step." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat destroy-plan.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform destroy
+        run: |
+          cd terraform/environments/${{ github.event.inputs.environment }}
+          terraform apply -destroy -no-color -auto-approve destroy.tfplan
+
+      - name: Upload local Terraform state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state-after-destroy-${{ github.event.inputs.environment }}
+          path: |
+            terraform/environments/${{ github.event.inputs.environment }}/terraform.tfstate
+            terraform/environments/${{ github.event.inputs.environment }}/terraform.tfstate.backup
+          if-no-files-found: ignore

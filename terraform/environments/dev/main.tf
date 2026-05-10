@@ -15,8 +15,8 @@ terraform {
     }
   }
 
-  # Backend configuration will be managed via -backend-config CLI flags or separate backend config file
-  # backend "s3" {}
+  # Backend settings are supplied by GitHub Actions via -backend-config.
+  backend "s3" {}
 }
 
 provider "aws" {

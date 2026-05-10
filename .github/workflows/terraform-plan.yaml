@@ -3,11 +3,7 @@ name: Terraform Validate and Plan
 on:
   push:
     branches:
-      - main
       - develop
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/terraform-*.yaml'
 
   pull_request:
     branches:
@@ -84,10 +80,9 @@ jobs:
         working-directory: terraform/environments/${{ matrix.environment }}
         run: terraform validate
 
-      # Terraform Plan (Only for PR)
+      # Terraform Plan
       - name: Terraform Plan
         id: plan
-        if: github.event_name == 'pull_request'
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
           terraform plan -no-color -out=tfplan | tee plan.txt

@@ -17,7 +17,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  TF_VERSION: 1.6.0
+  TF_VERSION: 1.9.8
 
 jobs:
   terraform-validate:
@@ -44,10 +44,15 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
     
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
+      uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TF_VERSION }}
         terraform_wrapper: false
+
+    - name: Cleanup Terraform Cache
+      run: |
+        cd terraform/environments/${{ matrix.environment }}
+        rm -rf .terraform .terraform.lock.hcl
     
     - name: Terraform Format Check
       id: fmt

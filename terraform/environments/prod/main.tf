@@ -15,8 +15,7 @@ terraform {
     }
   }
 
-  # Backend settings are supplied by GitHub Actions via -backend-config.
-  backend "s3" {}
+  # Local state is used by default. Do not configure a remote backend here.
 }
 
 provider "aws" {

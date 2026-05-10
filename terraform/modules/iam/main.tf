@@ -15,12 +15,34 @@ terraform {
 }
 
 # ============================================================================
+# Local Values
+# ============================================================================
+
+locals {
+  iam_name_prefix_max_length = 38
+
+  iam_name_prefixes = {
+    eks_cluster         = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-eks-cl-"))}-eks-cl-"
+    eks_node_group      = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-eks-ng-"))}-eks-ng-"
+    eks_node_cloudwatch = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-cw-"))}-cw-"
+    eks_node_profile    = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-eks-node-"))}-eks-node-"
+    alb_controller      = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-alb-"))}-alb-"
+    cluster_autoscaler  = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-ca-"))}-ca-"
+    ebs_csi_driver      = "${substr(var.project_name, 0, local.iam_name_prefix_max_length - length("-ebs-csi-"))}-ebs-csi-"
+  }
+
+  irsa_count        = var.enable_irsa ? 1 : 0
+  oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.eks[0].arn : var.oidc_provider_arn
+  oidc_provider_url = replace(var.eks_oidc_provider_url, "https://", "")
+}
+
+# ============================================================================
 # EKS Cluster IAM Role
 # ============================================================================
 
 resource "aws_iam_role" "eks_cluster_role" {
   count       = var.create_base_iam_roles ? 1 : 0
-  name_prefix = "${var.project_name}-eks-cluster-"
+  name_prefix = local.iam_name_prefixes.eks_cluster
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -60,7 +82,7 @@ resource "aws_iam_role_policy_attachment" "eks_vpc_resource_controller" {
 
 resource "aws_iam_role" "eks_node_group_role" {
   count       = var.create_base_iam_roles ? 1 : 0
-  name_prefix = "${var.project_name}-eks-node-group-"
+  name_prefix = local.iam_name_prefixes.eks_node_group
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -107,22 +129,12 @@ resource "aws_iam_role_policy_attachment" "eks_ssm_managed_instance_core" {
 }
 
 # ============================================================================
-# OIDC Enablement Flag
-# ============================================================================
-
-locals {
-  irsa_count        = var.enable_irsa ? 1 : 0
-  oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.eks[0].arn : var.oidc_provider_arn
-  oidc_provider_url = replace(var.eks_oidc_provider_url, "https://", "")
-}
-
-# ============================================================================
 # Custom Policy for CloudWatch Logs and Container Insights
 # ============================================================================
 
 resource "aws_iam_role_policy" "eks_node_cloudwatch_policy" {
   count       = var.create_base_iam_roles ? 1 : 0
-  name_prefix = "${var.project_name}-eks-node-cloudwatch-"
+  name_prefix = local.iam_name_prefixes.eks_node_cloudwatch
   role        = aws_iam_role.eks_node_group_role[0].id
 
   policy = jsonencode({
@@ -151,7 +163,7 @@ resource "aws_iam_role_policy" "eks_node_cloudwatch_policy" {
 
 resource "aws_iam_instance_profile" "eks_node_group" {
   count       = var.create_base_iam_roles ? 1 : 0
-  name_prefix = "${var.project_name}-eks-node-"
+  name_prefix = local.iam_name_prefixes.eks_node_profile
   role        = aws_iam_role.eks_node_group_role[0].name
 }
 
@@ -174,7 +186,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
 
 resource "aws_iam_role" "aws_load_balancer_controller" {
   count       = local.irsa_count
-  name_prefix = "${var.project_name}-aws-load-balancer-controller-"
+  name_prefix = local.iam_name_prefixes.alb_controller
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -199,7 +211,7 @@ resource "aws_iam_role" "aws_load_balancer_controller" {
 
 resource "aws_iam_role_policy" "aws_load_balancer_controller" {
   count       = local.irsa_count
-  name_prefix = "${var.project_name}-aws-load-balancer-controller-"
+  name_prefix = local.iam_name_prefixes.alb_controller
   role        = aws_iam_role.aws_load_balancer_controller[0].id
 
   policy = jsonencode({
@@ -255,7 +267,7 @@ resource "aws_iam_role_policy" "aws_load_balancer_controller" {
 
 resource "aws_iam_role" "cluster_autoscaler" {
   count       = local.irsa_count
-  name_prefix = "${var.project_name}-cluster-autoscaler-"
+  name_prefix = local.iam_name_prefixes.cluster_autoscaler
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -280,7 +292,7 @@ resource "aws_iam_role" "cluster_autoscaler" {
 
 resource "aws_iam_role_policy" "cluster_autoscaler" {
   count       = local.irsa_count
-  name_prefix = "${var.project_name}-cluster-autoscaler-"
+  name_prefix = local.iam_name_prefixes.cluster_autoscaler
   role        = aws_iam_role.cluster_autoscaler[0].id
 
   policy = jsonencode({
@@ -321,7 +333,7 @@ resource "aws_iam_role_policy" "cluster_autoscaler" {
 
 resource "aws_iam_role" "ebs_csi_driver" {
   count       = local.irsa_count
-  name_prefix = "${var.project_name}-ebs-csi-driver-"
+  name_prefix = local.iam_name_prefixes.ebs_csi_driver
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

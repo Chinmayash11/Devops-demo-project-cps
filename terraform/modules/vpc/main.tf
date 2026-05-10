@@ -271,27 +271,3 @@ resource "aws_iam_role_policy" "vpc_flow_logs" {
   })
 }
 
-# ============================================================================
-# Network ACLs (optional, for additional security)
-# ============================================================================
-
-resource "aws_network_acl_rule" "private_ingress" {
-  network_acl_id = aws_vpc.main.default_network_acl_id
-  rule_number    = 100
-  protocol       = -1
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-  from_port      = 0
-  to_port        = 0
-}
-
-resource "aws_network_acl_rule" "private_egress" {
-  network_acl_id = aws_vpc.main.default_network_acl_id
-  rule_number    = 100
-  protocol       = -1
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-  egress         = true
-  from_port      = 0
-  to_port        = 0
-}

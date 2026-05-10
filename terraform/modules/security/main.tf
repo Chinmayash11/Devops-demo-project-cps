@@ -285,22 +285,6 @@ resource "aws_security_group" "app_ingress" {
 }
 
 # ============================================================================
-# Network Policy for Pod-to-Pod Communication
-# ============================================================================
-
-resource "aws_ec2_network_insights_path" "pod_communication" {
-  source           = aws_security_group.app_ingress.vpc_id
-  destination      = aws_security_group.app_ingress.vpc_id
-  protocol         = "tcp"
-  tags = merge(
-    var.common_tags,
-    {
-      Name = "${var.project_name}-pod-communication"
-    }
-  )
-}
-
-# ============================================================================
 # CloudWatch Log Group for Application Logs
 # ============================================================================
 

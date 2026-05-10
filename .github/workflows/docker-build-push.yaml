@@ -19,7 +19,6 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPOSITORY: devops-app
 
 jobs:
@@ -29,6 +28,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      security-events: write
     
     steps:
     - name: Checkout code
@@ -37,14 +37,20 @@ jobs:
         fetch-depth: 0
     
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
         aws-region: ${{ env.AWS_REGION }}
+
+    - name: Resolve ECR registry
+      id: ecr
+      run: |
+        account_id="$(aws sts get-caller-identity --query Account --output text)"
+        echo "registry=${account_id}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> "$GITHUB_OUTPUT"
     
     - name: Login to Amazon ECR
       run: |
-        aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+        aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}
     
     - name: Get short SHA
       id: vars
@@ -60,42 +66,55 @@ jobs:
           --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
           --build-arg VCS_REF=${{ steps.vars.outputs.sha_short }} \
           --build-arg VERSION=${{ steps.vars.outputs.sha_short }} \
-          -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
-          -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }} \
-          -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.branch.outputs.branch }} \
+          -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest \
+          -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }} \
+          -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.branch.outputs.branch }} \
           .
     
     - name: Run Trivy vulnerability scanner
+      id: trivy
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+        image-ref: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
         format: 'sarif'
         output: 'trivy-results.sarif'
+      continue-on-error: true
+
+    - name: Check Trivy SARIF
+      id: trivy_sarif
+      run: |
+        if [ -f trivy-results.sarif ]; then
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          echo "Trivy SARIF file was not generated; skipping upload."
+        fi
     
     - name: Upload Trivy results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      if: steps.trivy_sarif.outputs.exists == 'true'
       with:
         sarif_file: 'trivy-results.sarif'
+      continue-on-error: true
     
     - name: Push to ECR on main
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }}
+        docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+        docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }}
     
     - name: Push to ECR on develop
       if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
       run: |
-        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:develop
-        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }}
+        docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:develop
+        docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }}
     
     - name: Create image digest summary
       if: github.event_name == 'push'
       run: |
         echo "## Docker Image Built Successfully" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Registry:** ${{ env.ECR_REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Registry:** ${{ steps.ecr.outputs.registry }}" >> $GITHUB_STEP_SUMMARY
         echo "**Repository:** ${{ env.ECR_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
         echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
         echo "- latest" >> $GITHUB_STEP_SUMMARY

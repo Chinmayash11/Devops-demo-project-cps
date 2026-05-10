@@ -53,6 +53,7 @@ jobs:
       run: |
         cd terraform/environments/${{ matrix.environment }}
         rm -rf .terraform .terraform.lock.hcl
+        rm -rf ~/.terraform.d/plugins ~/.terraform.d/registry ~/.terraform.d/plugin-cache
     
     - name: Terraform Format Check
       id: fmt
@@ -65,8 +66,8 @@ jobs:
       id: init
       run: |
         cd terraform/environments/${{ matrix.environment }}
-        terraform init -backend=false
-    
+        terraform init -backend=false -upgrade
+
     - name: Terraform Validate
       id: validate
       run: |

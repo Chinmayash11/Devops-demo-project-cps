@@ -47,6 +47,19 @@ jobs:
       run: |
         account_id="$(aws sts get-caller-identity --query Account --output text)"
         echo "registry=${account_id}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+    - name: Ensure ECR repository exists
+      run: |
+        if aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
+          echo "ECR repository '${{ env.ECR_REPOSITORY }}' already exists."
+        else
+          echo "Creating ECR repository '${{ env.ECR_REPOSITORY }}'."
+          aws ecr create-repository \
+            --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --image-scanning-configuration scanOnPush=true \
+            --image-tag-mutability MUTABLE \
+            --region "${{ env.AWS_REGION }}"
+        fi
     
     - name: Login to Amazon ECR
       run: |
